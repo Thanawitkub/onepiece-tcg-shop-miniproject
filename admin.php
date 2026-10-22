@@ -10,8 +10,29 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     exit;
 }
 
-// Fetch all products
-$stmt = $pdo->query("SELECT * FROM products ORDER BY id DESC");
+// Capture search keyword and category filter via GET
+$search = trim($_GET['search'] ?? '');
+$category = trim($_GET['category'] ?? '');
+
+// Build secure query with prepared statements to prevent SQL injection
+$sql = "SELECT * FROM products WHERE 1=1";
+$params = [];
+
+if ($search !== '') {
+    $sql .= " AND (name LIKE :search_name OR id LIKE :search_id)";
+    $params[':search_name'] = '%' . $search . '%';
+    $params[':search_id'] = '%' . $search . '%';
+}
+
+if ($category !== '' && $category !== 'all') {
+    $sql .= " AND category = :category";
+    $params[':category'] = $category;
+}
+
+$sql .= " ORDER BY id DESC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
 $products = $stmt->fetchAll();
 
 require_once __DIR__ . '/header.php';
@@ -69,15 +90,60 @@ require_once __DIR__ . '/header.php';
 
     <!-- Product Table Container -->
     <div class="admin-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h3 style="font-family: 'Cinzel', serif; font-size: 1.25rem; color: #fff;">
-                <i class="fa-solid fa-boxes-stacked" style="color: var(--haki-crimson); margin-right: 0.5rem;"></i>
-                Registered Vault Inventory (<?php echo count($products); ?> Items)
-            </h3>
-            <span style="font-size: 0.82rem; color: var(--text-muted);">
-                Logged in as Administrator: <strong style="color: var(--ocean-cyan);"><?php echo htmlspecialchars($_SESSION['username']); ?></strong>
-            </span>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <h3 style="font-family: 'Cinzel', serif; font-size: 1.25rem; color: #fff;">
+                    <i class="fa-solid fa-boxes-stacked" style="color: var(--haki-crimson); margin-right: 0.5rem;"></i>
+                    Registered Vault Inventory (<?php echo count($products); ?> Items)
+                </h3>
+                <span style="font-size: 0.82rem; color: var(--text-muted);">
+                    Logged in as Administrator: <strong style="color: var(--ocean-cyan);"><?php echo htmlspecialchars($_SESSION['username']); ?></strong>
+                </span>
+            </div>
+
+            <!-- Search & Filter Form (Top Right) -->
+            <form action="admin.php" method="GET" style="display: flex; gap: 0.55rem; align-items: center; flex-wrap: wrap;">
+                <div style="position: relative;">
+                    <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem;"></i>
+                    <input type="text" name="search" class="form-control" style="padding-left: 2.3rem; height: 38px; width: 230px;" placeholder="Search name or ID..." value="<?php echo htmlspecialchars($search); ?>">
+                </div>
+
+                <select name="category" class="form-control" style="width: auto; height: 38px;">
+                    <option value="all" <?php echo ($category === 'all' || $category === '') ? 'selected' : ''; ?>>All Categories</option>
+                    <option value="Booster Pack" <?php echo ($category === 'Booster Pack') ? 'selected' : ''; ?>>Booster Pack</option>
+                    <option value="Booster Box" <?php echo ($category === 'Booster Box') ? 'selected' : ''; ?>>Booster Box</option>
+                    <option value="Carton" <?php echo ($category === 'Carton') ? 'selected' : ''; ?>>Carton</option>
+                </select>
+
+                <button type="submit" class="btn-haki btn-sm" style="height: 38px; padding: 0 1rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+                    <i class="fa-solid fa-magnifying-glass"></i> Search
+                </button>
+
+                <a href="admin.php" class="btn-ghost btn-sm" style="height: 38px; padding: 0 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem;" title="Reset filter">
+                    <i class="fa-solid fa-rotate-left"></i> Clear
+                </a>
+            </form>
         </div>
+
+        <?php if ($search !== '' || ($category !== '' && $category !== 'all')): ?>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: rgba(255, 23, 68, 0.08); border: 1px solid rgba(255, 23, 68, 0.25); border-radius: var(--radius-md); padding: 0.55rem 0.95rem; margin-bottom: 1.25rem;">
+                <div style="font-size: 0.86rem; color: #fff;">
+                    <i class="fa-solid fa-filter" style="color: var(--haki-crimson); margin-right: 0.4rem;"></i>
+                    Active Search:
+                    <?php if ($search !== ''): ?>
+                        Keyword: <strong style="color: var(--haki-crimson);">"<?php echo htmlspecialchars($search); ?>"</strong>
+                    <?php endif; ?>
+                    <?php if ($search !== '' && $category !== '' && $category !== 'all'): ?> &bull; <?php endif; ?>
+                    <?php if ($category !== '' && $category !== 'all'): ?>
+                        Category: <strong style="color: var(--ocean-cyan);">"<?php echo htmlspecialchars($category); ?>"</strong>
+                    <?php endif; ?>
+                    <span style="color: var(--text-muted); margin-left: 0.5rem;">(Found <?php echo count($products); ?> item<?php echo count($products) === 1 ? '' : 's'; ?>)</span>
+                </div>
+                <a href="admin.php" style="color: var(--text-muted); text-decoration: none; font-size: 0.8rem; display: flex; align-items: center; gap: 0.35rem;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='var(--text-muted)'">
+                    <i class="fa-solid fa-xmark"></i> Clear filter
+                </a>
+            </div>
+        <?php endif; ?>
 
         <div class="table-responsive">
             <table class="pirate-table">
@@ -96,7 +162,18 @@ require_once __DIR__ . '/header.php';
                     <?php if (empty($products)): ?>
                         <tr>
                             <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
-                                No products found in the database. Click "+ Add New Product" to forge your first card.
+                                <?php if ($search !== '' || ($category !== '' && $category !== 'all')): ?>
+                                    <div style="font-size: 1.1rem; color: #fff; margin-bottom: 0.5rem;">
+                                        <i class="fa-solid fa-magnifying-glass" style="color: var(--haki-crimson); margin-right: 0.5rem;"></i>
+                                        No treasures found matching your search criteria.
+                                    </div>
+                                    <p style="font-size: 0.85rem; margin-bottom: 1rem;">Try searching with different keywords or reset your filter.</p>
+                                    <a href="admin.php" class="btn-ghost btn-sm" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                                        <i class="fa-solid fa-rotate-left"></i> View All Items
+                                    </a>
+                                <?php else: ?>
+                                    No products found in the database. Click "+ Add New Product" to forge your first card.
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php else: ?>
